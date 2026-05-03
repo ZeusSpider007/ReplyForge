@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ReplyForge — Forge replies that don't sound like AI</title>
+  <meta name="description" content="ReplyForge generates sharp, human-sounding Twitter replies using a local LLM. Private. Fast. Yours." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop offset='0' stop-color='%23fb923c'/%3E%3Cstop offset='1' stop-color='%23ea580c'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M11 9h6.5L21 14l-3.5 5H11l3.2-5L11 9z' fill='%230a0a0b'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+          },
+          colors: {
+            ink: {
+              950: '#08080a',
+              925: '#0c0c0f',
+              900: '#101013',
+              875: '#15151a',
+              850: '#1a1a20',
+              800: '#1f1f26',
+              750: '#26262e',
+              700: '#2d2d36',
+              600: '#3d3d48',
+              500: '#5a5a66',
+            },
+            forge: {
+              50:  '#fff7ed',
+              100: '#ffedd5',
+              200: '#fed7aa',
+              300: '#fdba74',
+              400: '#fb923c',
+              500: '#f97316',
+              600: '#ea580c',
+              700: '#c2410c',
+              800: '#9a3412',
+            },
+          },
+          boxShadow: {
+            glow: '0 0 0 1px rgba(249,115,22,.15), 0 8px 32px -8px rgba(249,115,22,.35)',
+            card: '0 1px 0 rgba(255,255,255,.04) inset, 0 0 0 1px rgba(255,255,255,.04), 0 12px 32px -16px rgba(0,0,0,.6)',
+          },
+          keyframes: {
+            fadeUp:    { '0%': { opacity: 0, transform: 'translateY(6px)' }, '100%': { opacity: 1, transform: 'none' } },
+            shimmer:   { '0%': { backgroundPosition: '200% 0' }, '100%': { backgroundPosition: '-200% 0' } },
+            pulseDot:  { '0%,100%': { opacity: .6 }, '50%': { opacity: 1 } },
+            float:     { '0%,100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-3px)' } },
+          },
+          animation: {
+            fadeUp: 'fadeUp .4s cubic-bezier(.2,.8,.2,1) both',
+            shimmer: 'shimmer 1.4s ease-in-out infinite',
+            pulseDot: 'pulseDot 1.6s ease-in-out infinite',
+            float: 'float 3s ease-in-out infinite',
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { background: #08080a; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01';
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    textarea { field-sizing: content; }
+
+    /* Ambient backdrop */
+    .bg-grid {
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(249,115,22,.10), transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(249,115,22,.06), transparent 60%),
+        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+      background-size: auto, auto, 48px 48px, 48px 48px;
+      background-position: 0 0, 0 0, -1px -1px, -1px -1px;
+    }
+
+    /* Skeleton shimmer */
+    .skeleton {
+      background: linear-gradient(90deg, #15151a 0%, #26262e 50%, #15151a 100%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s ease-in-out infinite;
+    }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* Subtle border-gradient on focus */
+    .focus-ring:focus-within {
+      box-shadow: 0 0 0 1px rgba(249,115,22,.55), 0 0 0 4px rgba(249,115,22,.10);
+      border-color: transparent;
+    }
+
+    /* Custom scrollbar in textarea */
+    textarea::-webkit-scrollbar { width: 6px; }
+    textarea::-webkit-scrollbar-thumb { background: #2d2d36; border-radius: 3px; }
+
+    /* Selection */
+    ::selection { background: rgba(249,115,22,.35); color: #fff; }
+
+    kbd {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 10px;
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: #1a1a20;
+      border: 1px solid #2d2d36;
+      box-shadow: 0 1px 0 #0c0c0f;
+      color: #a1a1aa;
+    }
+  </style>
+</head>
+<body class="min-h-screen text-zinc-100 selection:bg-forge-500/30">
+
+  <!-- Ambient backdrop -->
+  <div class="pointer-events-none fixed inset-0 -z-10 bg-grid opacity-90"></div>
+  <div class="pointer-events-none fixed inset-x-0 top-0 -z-10 h-px bg-gradient-to-r from-transparent via-forge-500/40 to-transparent"></div>
+
+  <!-- Top nav -->
+  <header class="sticky top-0 z-30 border-b border-white/5 bg-ink-950/70 backdrop-blur-xl">
+    <div class="mx-auto flex max-w-3xl items-center justify-between px-5 py-3.5">
+      <a href="/" class="group flex items-center gap-2.5">
+        <span class="relative inline-flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-forge-400 to-forge-600 shadow-glow transition group-hover:scale-105">
+          <svg viewBox="0 0 24 24" class="h-4 w-4 text-ink-950" fill="currentColor" aria-hidden="true">
+            <path d="M8 4h7l3.5 4.5L15 14H8.5l2.7-4.5L8 4z"/>
+            <path d="M6 16l4 4 8-9-3.5 1L11 14l-5 2z" opacity=".75"/>
+          </svg>
+        </span>
+        <span class="flex items-baseline gap-1.5">
+          <span class="text-[15px] font-bold tracking-tight">ReplyForge</span>
+          <span class="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-zinc-400">local</span>
+        </span>
+      </a>
+
+      <div class="flex items-center gap-2">
+        <!-- Model manager button -->
+        <div class="relative">
+          <button id="mgr-btn"
+            class="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-400 transition hover:border-white/20 hover:text-zinc-200">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+            </svg>
+            <span>Models</span>
+            <span id="mgr-badge" class="hidden h-4 w-4 items-center justify-center rounded-full bg-emerald-500/20 font-mono text-[10px] text-emerald-400"></span>
+          </button>
+
+          <!-- Dropdown panel -->
+          <div id="mgr-panel"
+            class="absolute right-0 top-full z-50 mt-2 hidden w-80 rounded-2xl border border-white/10 bg-ink-900 shadow-2xl shadow-black/50">
+            <div class="flex items-center justify-between border-b border-white/5 px-4 py-3">
+              <span class="text-xs font-semibold text-zinc-300">Model Manager</span>
+              <button id="mgr-refresh" class="rounded-md p-1 text-zinc-500 transition hover:text-zinc-300" title="Refresh">
+                <svg id="mgr-refresh-icon" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>
+                </svg>
+              </button>
+            </div>
+            <div id="mgr-list" class="max-h-72 overflow-y-auto px-3 py-2 space-y-1">
+              <p class="py-4 text-center text-xs text-zinc-500">Loading…</p>
+            </div>
+            <div class="border-t border-white/5 px-4 py-2.5">
+              <p class="text-[10px] leading-relaxed text-zinc-600">Loaded models stay in memory for 10 min after last use. Unloading frees RAM/VRAM immediately.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Status pill -->
+        <div id="status-pill" class="flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-400">
+          <span id="status-dot" class="inline-block h-1.5 w-1.5 rounded-full bg-zinc-500 animate-pulseDot"></span>
+          <span id="status-text" class="font-medium">checking…</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-3xl px-5 pb-32 pt-12 sm:pt-20">
+
+    <!-- Hero -->
+    <section class="mb-10 sm:mb-14">
+      <div class="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[.03] px-3 py-1 text-xs text-zinc-400">
+        <span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+        100% on-device · zero telemetry
+      </div>
+      <h1 class="text-balance text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl">
+        Forge replies that
+        <span class="bg-gradient-to-r from-forge-300 via-forge-400 to-forge-600 bg-clip-text text-transparent">don't sound like AI.</span>
+      </h1>
+      <p class="mt-4 max-w-xl text-pretty text-base leading-relaxed text-zinc-400 sm:text-lg">
+        Paste a tweet. Get three sharp, human-sounding replies : professional, bold, and witty - generated by your local model in seconds.
+      </p>
+    </section>
+
+    <!-- Composer -->
+    <section class="animate-fadeUp">
+      <div id="composer" class="focus-ring rounded-2xl border border-white/10 bg-ink-900/80 shadow-card backdrop-blur transition">
+        <div class="flex items-center justify-between border-b border-white/5 px-4 py-2.5">
+          <div class="flex items-center gap-2 text-xs font-medium text-zinc-500">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            Tweet to reply to
+          </div>
+          <div class="font-mono text-[11px] tabular-nums text-zinc-500">
+            <span id="char-count">0</span><span class="text-zinc-700">/4000</span>
+          </div>
+        </div>
+
+        <textarea
+          id="post"
+          rows="5"
+          maxlength="4000"
+          placeholder="Paste a tweet here, or write what you want to reply to…"
+          class="block w-full resize-none bg-transparent px-4 pb-3 pt-3 text-[15px] leading-relaxed placeholder:text-zinc-600 focus:outline-none"></textarea>
+
+        <!-- Options toolbar -->
+        <div class="flex flex-wrap items-center gap-3 border-t border-white/5 bg-white/[.015] px-4 py-2.5">
+          <!-- Model selector -->
+          <div class="flex items-center gap-2">
+            <svg class="h-3.5 w-3.5 shrink-0 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            <select id="model-select"
+              class="rounded-md border border-white/10 bg-ink-800 py-1 pl-2 pr-6 font-mono text-[11px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-forge-500/50 appearance-none cursor-pointer hover:border-white/20 transition">
+              <option value="">loading models…</option>
+            </select>
+          </div>
+
+          <!-- Divider -->
+          <span class="h-4 w-px bg-white/10"></span>
+
+          <!-- Web context toggle -->
+          <label class="flex cursor-pointer items-center gap-2 select-none" title="Search DuckDuckGo for context before generating">
+            <span class="relative inline-flex h-5 w-9 shrink-0">
+              <input type="checkbox" id="web-toggle" class="peer sr-only" />
+              <span class="absolute inset-0 rounded-full bg-ink-700 transition peer-checked:bg-forge-600 peer-focus-visible:ring-2 peer-focus-visible:ring-forge-500/50"></span>
+              <span class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4"></span>
+            </span>
+            <span class="flex items-center gap-1.5 text-[11px] text-zinc-400 peer-checked:text-zinc-200">
+              <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              Web context
+            </span>
+          </label>
+
+          <!-- Spacer -->
+          <div class="flex-1"></div>
+
+          <!-- Keyboard hint -->
+          <div class="hidden items-center gap-1 text-[11px] text-zinc-600 sm:flex">
+            <kbd>⌘</kbd><span>+</span><kbd>↵</kbd>
+          </div>
+
+          <!-- Generate button -->
+          <button
+            id="generate"
+            class="group inline-flex items-center gap-2 rounded-lg bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:from-forge-300 hover:to-forge-500 active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:from-forge-400 disabled:hover:to-forge-600">
+            <svg id="btn-spinner" class="hidden h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+              <path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z"></path>
+            </svg>
+            <svg id="btn-icon" class="h-4 w-4 transition group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12h14M13 5l7 7-7 7"/>
+            </svg>
+            <span id="btn-label">Forge replies</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Error banner -->
+    <div id="error" class="mt-5 hidden rounded-xl border border-red-500/20 bg-red-500/[.06] px-4 py-3 text-sm text-red-200">
+      <div class="flex items-start gap-2.5">
+        <svg class="mt-0.5 h-4 w-4 shrink-0 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span id="error-text" class="leading-relaxed"></span>
+      </div>
+    </div>
+
+    <!-- Output -->
+    <section id="results" class="mt-8 space-y-3"></section>
+
+    <!-- Empty state -->
+    <section id="empty" class="mt-10">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div class="rounded-xl border border-white/5 bg-white/[.02] p-4">
+          <div class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-sky-400">
+            <span>◆</span> Professional
+          </div>
+          <p class="mt-2 text-xs leading-relaxed text-zinc-500">Thoughtful, insightful, adds a real perspective.</p>
+        </div>
+        <div class="rounded-xl border border-white/5 bg-white/[.02] p-4">
+          <div class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-forge-400">
+            <span>▲</span> Bold
+          </div>
+          <p class="mt-2 text-xs leading-relaxed text-zinc-500">Confident, opinionated, takes a clear stance.</p>
+        </div>
+        <div class="rounded-xl border border-white/5 bg-white/[.02] p-4">
+          <div class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-400">
+            <span>✦</span> Witty
+          </div>
+          <p class="mt-2 text-xs leading-relaxed text-zinc-500">Light humor, clever phrasing, earned wit.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Skeleton template -->
+    <template id="skeleton-tpl">
+      <div class="space-y-3">
+        <div class="rounded-2xl border border-white/10 bg-ink-900/60 p-4 shadow-card">
+          <div class="flex items-center justify-between"><div class="skeleton h-3 w-24 rounded"></div><div class="skeleton h-3 w-12 rounded"></div></div>
+          <div class="mt-3 space-y-2"><div class="skeleton h-3 w-full rounded"></div><div class="skeleton h-3 w-5/6 rounded"></div><div class="skeleton h-3 w-2/3 rounded"></div></div>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-ink-900/60 p-4 shadow-card">
+          <div class="flex items-center justify-between"><div class="skeleton h-3 w-24 rounded"></div><div class="skeleton h-3 w-12 rounded"></div></div>
+          <div class="mt-3 space-y-2"><div class="skeleton h-3 w-full rounded"></div><div class="skeleton h-3 w-3/4 rounded"></div></div>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-ink-900/60 p-4 shadow-card">
+          <div class="flex items-center justify-between"><div class="skeleton h-3 w-24 rounded"></div><div class="skeleton h-3 w-12 rounded"></div></div>
+          <div class="mt-3 space-y-2"><div class="skeleton h-3 w-11/12 rounded"></div><div class="skeleton h-3 w-1/2 rounded"></div></div>
+        </div>
+      </div>
+    </template>
+  </main>
+
+  <!-- Footer -->
+  <footer class="fixed inset-x-0 bottom-0 z-20 border-t border-white/5 bg-ink-950/70 backdrop-blur-xl">
+    <div class="mx-auto flex max-w-3xl items-center justify-between px-5 py-2.5 text-[11px] text-zinc-500">
+      <div class="flex items-center gap-2">
+        <span class="font-mono">model</span>
+        <span id="model-name" class="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-zinc-300">—</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <span>Powered by Ollama</span>
+        <span class="h-3 w-px bg-white/10"></span>
+        <span>Built for Apple Silicon</span>
+        <span class="h-3 w-px bg-white/10"></span>
+        <span>Made by
+          <a href="https://x.com/NayanUnfiltered" target="_blank" rel="noopener"
+            class="font-medium text-zinc-300 transition hover:text-forge-400">@NayanUnfiltered</a>
+        </span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const postEl        = $('post');
+    const btn           = $('generate');
+    const btnLabel      = $('btn-label');
+    const btnIcon       = $('btn-icon');
+    const btnSpinner    = $('btn-spinner');
+    const charCount     = $('char-count');
+    const errEl         = $('error');
+    const errText       = $('error-text');
+    const resultsEl     = $('results');
+    const emptyEl       = $('empty');
+    const statusDot     = $('status-dot');
+    const statusText    = $('status-text');
+    const statusPill    = $('status-pill');
+    const modelName     = $('model-name');
+    const modelSelect   = $('model-select');
+    const webToggle     = $('web-toggle');
+    const skeletonTpl   = $('skeleton-tpl');
+    const mgrBtn        = $('mgr-btn');
+    const mgrPanel      = $('mgr-panel');
+    const mgrList       = $('mgr-list');
+    const mgrBadge      = $('mgr-badge');
+    const mgrRefresh    = $('mgr-refresh');
+    const mgrRefreshIcon= $('mgr-refresh-icon');
+
+    const STYLE_META = {
+      professional: { label: 'Professional', tone: 'sky',     icon: '◆' },
+      bold:         { label: 'Bold',         tone: 'forge',   icon: '▲' },
+      witty:        { label: 'Witty',        tone: 'emerald', icon: '✦' },
+      general:      { label: 'Reply',        tone: 'zinc',    icon: '•' },
+    };
+    const TONE_CLASS = {
+      sky:     { text: 'text-sky-400',     ring: 'ring-sky-500/20',     bar: 'bg-sky-500/40' },
+      forge:   { text: 'text-forge-400',   ring: 'ring-forge-500/20',   bar: 'bg-forge-500/50' },
+      emerald: { text: 'text-emerald-400', ring: 'ring-emerald-500/20', bar: 'bg-emerald-500/40' },
+      zinc:    { text: 'text-zinc-400',    ring: 'ring-zinc-500/20',    bar: 'bg-zinc-500/40' },
+    };
+
+    let inflight = false;
+
+    postEl.addEventListener('input', () => {
+      charCount.textContent = postEl.value.length.toString();
+    });
+
+    postEl.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        generate();
+      }
+    });
+
+    btn.addEventListener('click', generate);
+
+    // ── Model selector ─────────────────────────────────────────────────────
+    async function loadModels() {
+      try {
+        const r = await fetch('/api/models');
+        const data = await r.json();
+        const models = data.models || [];
+        const active = data.active || '';
+
+        // Preserve whatever the user has already selected
+        const prevSelected = modelSelect.value;
+
+        modelSelect.innerHTML = '';
+        if (!models.length) {
+          modelSelect.innerHTML = '<option value="">no models found</option>';
+          return;
+        }
+        models.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = m;
+          // Keep the user's existing choice; fall back to .env default on first load
+          opt.selected = prevSelected ? m === prevSelected : m === active;
+          modelSelect.appendChild(opt);
+        });
+      } catch {
+        modelSelect.innerHTML = '<option value="">unavailable</option>';
+      }
+    }
+
+    // ── Health probe ───────────────────────────────────────────────────────
+    let installedModels = [];
+    let runningModelNames = [];
+
+    async function checkHealth() {
+      try {
+        const [healthRes, runningRes] = await Promise.all([
+          fetch('/api/health'),
+          fetch('/api/running'),
+        ]);
+        const health  = await healthRes.json();
+        const running = await runningRes.json();
+
+        installedModels   = health.installed_models || [];
+        runningModelNames = (running.models || []).map(m => m.name);
+
+        if (health.status !== 'ok') {
+          setStatus('red', 'Ollama offline');
+          modelName.textContent = '—';
+          return;
+        }
+
+        updateStatusForSelected();
+      } catch {
+        setStatus('red', 'backend offline');
+        modelName.textContent = '—';
+      }
+    }
+
+    function updateStatusForSelected() {
+      const selected = modelSelect.value || '';
+      modelName.textContent = selected || '—';
+
+      if (!selected) {
+        setStatus('zinc', 'no model selected');
+        return;
+      }
+      const installed = installedModels.some(m => m === selected || m.startsWith(selected + ':'));
+      if (!installed) {
+        setStatus('amber', `pull ${selected}`);
+        return;
+      }
+      const isLoaded = runningModelNames.includes(selected);
+      if (isLoaded) {
+        setStatus('emerald', `${selected} loaded`);
+      } else {
+        setStatus('zinc', `${selected} idle`);
+      }
+    }
+
+    // Update pill immediately when the user picks a different model
+    modelSelect.addEventListener('change', updateStatusForSelected);
+
+    function setStatus(tone, text) {
+      const tones = { emerald: 'bg-emerald-400', amber: 'bg-amber-400', red: 'bg-red-500', zinc: 'bg-zinc-500' };
+      statusDot.className = `inline-block h-1.5 w-1.5 rounded-full ${tones[tone]} ${tone === 'emerald' ? '' : 'animate-pulseDot'}`;
+      statusText.textContent = text;
+    }
+
+    // ── Generate ───────────────────────────────────────────────────────────
+    async function generate() {
+      if (inflight) return;
+      const post = postEl.value.trim();
+      if (!post) { showError('Paste a tweet first.'); postEl.focus(); return; }
+
+      const useWeb  = webToggle.checked;
+      const model   = modelSelect.value || undefined;
+
+      inflight = true;
+      setLoading(true, useWeb);
+      hideError();
+      emptyEl.classList.add('hidden');
+      renderSkeleton();
+
+      try {
+        const r = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ post, use_web: useWeb, model }),
+        });
+        if (!r.ok) throw new Error((await safeDetail(r)) || `Request failed (${r.status})`);
+        const data = await r.json();
+        renderReplies(data.replies || [], data.web_sources || []);
+      } catch (err) {
+        resultsEl.innerHTML = '';
+        emptyEl.classList.remove('hidden');
+        showError(err.message || 'Something went wrong.');
+      } finally {
+        inflight = false;
+        setLoading(false, false);
+      }
+    }
+
+    async function safeDetail(r) {
+      try { const d = await r.json(); return d.detail || d.message; } catch { return null; }
+    }
+
+    function setLoading(loading, web = false) {
+      btn.disabled = loading;
+      if (loading) {
+        btnLabel.textContent = web ? 'Searching web…' : 'Forging…';
+        // If web, update label mid-way to reflect inference step
+        if (web) setTimeout(() => { if (inflight) btnLabel.textContent = 'Forging…'; }, 3500);
+      } else {
+        btnLabel.textContent = 'Forge replies';
+      }
+      btnSpinner.classList.toggle('hidden', !loading);
+      btnIcon.classList.toggle('hidden', loading);
+    }
+
+    function renderSkeleton() {
+      resultsEl.innerHTML = '';
+      resultsEl.appendChild(skeletonTpl.content.cloneNode(true));
+    }
+
+    function renderReplies(replies, sources) {
+      resultsEl.innerHTML = '';
+      emptyEl.classList.add('hidden');
+
+      // Web sources banner
+      if (sources.length) {
+        const banner = document.createElement('div');
+        banner.className = 'animate-fadeUp mb-1 flex flex-wrap items-center gap-2 rounded-xl border border-white/5 bg-white/[.02] px-3 py-2';
+        banner.innerHTML = `
+          <span class="flex items-center gap-1.5 text-[11px] font-medium text-zinc-400">
+            <svg class="h-3 w-3 text-forge-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            Context from
+          </span>
+          ${sources.map(s => {
+            let host = s;
+            try { host = new URL(s).hostname.replace('www.', ''); } catch {}
+            return `<a href="${s}" target="_blank" rel="noopener" class="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 font-mono text-[10px] text-zinc-400 hover:text-zinc-200 transition">${host}</a>`;
+          }).join('')}
+        `;
+        resultsEl.appendChild(banner);
+      }
+
+      replies.forEach((reply, i) => {
+        const meta = STYLE_META[reply.style] || STYLE_META.general;
+        const tone = TONE_CLASS[meta.tone];
+
+        const card = document.createElement('article');
+        card.className = 'animate-fadeUp group relative overflow-hidden rounded-2xl border border-white/10 bg-ink-900/80 p-4 shadow-card backdrop-blur transition hover:border-white/15';
+        card.style.animationDelay = `${(i + (sources.length ? 1 : 0)) * 70}ms`;
+
+        const bar = document.createElement('span');
+        bar.className = `absolute inset-y-0 left-0 w-[3px] ${tone.bar}`;
+        card.appendChild(bar);
+
+        const header = document.createElement('div');
+        header.className = 'flex items-center justify-between gap-3';
+        header.innerHTML = `
+          <span class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[.12em] ${tone.text}">
+            <span aria-hidden="true">${meta.icon}</span>${meta.label}
+          </span>
+          <span class="font-mono text-[11px] tabular-nums text-zinc-500">${reply.text.length}/280</span>
+        `;
+        card.appendChild(header);
+
+        const body = document.createElement('p');
+        body.className = 'mt-2.5 whitespace-pre-wrap text-[15px] leading-relaxed text-zinc-100';
+        body.textContent = reply.text;
+        card.appendChild(body);
+
+        const actions = document.createElement('div');
+        actions.className = 'mt-4 flex items-center gap-2';
+        const copyBtn = makeAction(iconCopy() + 'Copy', () => copy(reply.text, copyBtn));
+        const tweetBtn = makeAction(iconX() + 'Post on X', () => {
+          window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(reply.text)}`, '_blank', 'noopener');
+        });
+        actions.append(copyBtn, tweetBtn);
+        card.appendChild(actions);
+
+        resultsEl.appendChild(card);
+      });
+    }
+
+    function iconCopy() {
+      return `<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+    }
+    function iconX() {
+      return `<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>`;
+    }
+
+    function makeAction(html, onClick) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = `<span class="inline-flex items-center gap-1.5">${html}</span>`;
+      b.className =
+        'inline-flex items-center rounded-md border border-white/10 bg-white/[.03] px-2.5 py-1.5 text-[12px] font-medium text-zinc-300 transition hover:border-white/15 hover:bg-white/[.06] hover:text-white';
+      b.addEventListener('click', onClick);
+      return b;
+    }
+
+    async function copy(text, btn) {
+      try {
+        await navigator.clipboard.writeText(text);
+        const prev = btn.innerHTML;
+        btn.innerHTML = `<span class="inline-flex items-center gap-1.5 text-emerald-400">
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Copied
+        </span>`;
+        setTimeout(() => { btn.innerHTML = prev; }, 1200);
+      } catch {
+        showError('Clipboard blocked by your browser.');
+      }
+    }
+
+    function showError(msg) {
+      errText.textContent = msg;
+      errEl.classList.remove('hidden');
+    }
+    function hideError() {
+      errEl.classList.add('hidden');
+      errText.textContent = '';
+    }
+
+    // ── Model Manager ──────────────────────────────────────────────────────
+
+    let mgrOpen = false;
+
+    mgrBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      mgrOpen = !mgrOpen;
+      mgrPanel.classList.toggle('hidden', !mgrOpen);
+      if (mgrOpen) refreshManager();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (mgrOpen && !mgrPanel.contains(e.target) && !mgrBtn.contains(e.target)) {
+        mgrOpen = false;
+        mgrPanel.classList.add('hidden');
+      }
+    });
+
+    mgrRefresh.addEventListener('click', () => refreshManager());
+
+    async function refreshManager() {
+      mgrRefreshIcon.classList.add('animate-spin');
+      try {
+        const [installedRes, runningRes] = await Promise.all([
+          fetch('/api/models'),
+          fetch('/api/running'),
+        ]);
+        const { models: installed = [], active } = await installedRes.json();
+        const { models: running = [] }            = await runningRes.json();
+
+        const runningNames = new Set(running.map(m => m.name));
+
+        // Update badge count
+        if (running.length > 0) {
+          mgrBadge.textContent = running.length;
+          mgrBadge.classList.remove('hidden');
+          mgrBadge.classList.add('inline-flex');
+        } else {
+          mgrBadge.classList.add('hidden');
+          mgrBadge.classList.remove('inline-flex');
+        }
+
+        if (!installed.length) {
+          mgrList.innerHTML = '<p class="py-4 text-center text-xs text-zinc-500">No models installed.</p>';
+          return;
+        }
+
+        mgrList.innerHTML = '';
+        installed.forEach(name => {
+          const isRunning = runningNames.has(name);
+          const meta      = running.find(m => m.name === name);
+
+          const row = document.createElement('div');
+          row.className = 'flex items-center justify-between gap-2 rounded-lg px-2 py-2 transition hover:bg-white/[.03]';
+
+          const left = document.createElement('div');
+          left.className = 'flex items-center gap-2.5 min-w-0';
+
+          const dot = document.createElement('span');
+          dot.className = `h-1.5 w-1.5 shrink-0 rounded-full ${isRunning ? 'bg-emerald-400' : 'bg-zinc-600'}`;
+
+          const info = document.createElement('div');
+          info.className = 'min-w-0';
+
+          const nameEl = document.createElement('p');
+          nameEl.className = 'truncate font-mono text-[12px] text-zinc-200';
+          nameEl.textContent = name;
+
+          const meta_el = document.createElement('p');
+          meta_el.className = 'text-[10px] text-zinc-500';
+          if (isRunning && meta) {
+            const parts = [];
+            if (meta.size_gb)  parts.push(`${meta.size_gb} GB RAM`);
+            if (meta.vram_gb)  parts.push(`${meta.vram_gb} GB VRAM`);
+            meta_el.textContent = parts.length ? parts.join(' · ') : 'loaded';
+          } else {
+            meta_el.textContent = 'not loaded';
+          }
+
+          info.append(nameEl, meta_el);
+          left.append(dot, info);
+
+          const actionBtn = document.createElement('button');
+          actionBtn.className = isRunning
+            ? 'shrink-0 rounded-md border border-red-500/25 bg-red-500/10 px-2.5 py-1 text-[11px] font-medium text-red-400 transition hover:bg-red-500/20'
+            : 'shrink-0 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-400 transition hover:bg-emerald-500/20';
+          actionBtn.textContent = isRunning ? 'Unload' : 'Load';
+          actionBtn.addEventListener('click', () => toggleModel(name, isRunning, row, actionBtn));
+
+          row.append(left, actionBtn);
+          mgrList.appendChild(row);
+        });
+      } catch {
+        mgrList.innerHTML = '<p class="py-4 text-center text-xs text-red-400">Could not reach backend.</p>';
+      } finally {
+        mgrRefreshIcon.classList.remove('animate-spin');
+      }
+    }
+
+    async function toggleModel(name, isRunning, row, btn) {
+      btn.disabled = true;
+      btn.textContent = isRunning ? 'Unloading…' : 'Loading…';
+      btn.className = 'shrink-0 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-zinc-400 cursor-not-allowed';
+
+      try {
+        const endpoint = isRunning ? '/api/models/unload' : '/api/models/load';
+        const r = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: name }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d.detail || `Failed (${r.status})`);
+        }
+
+        // If we just loaded a model, auto-select it in the dropdown
+        // so the next generation uses it (and the pill reflects it).
+        if (!isRunning) {
+          await loadModels();
+          if ([...modelSelect.options].some(o => o.value === name)) {
+            modelSelect.value = name;
+          }
+        }
+
+        // Refresh panel and status pill together
+        await Promise.all([refreshManager(), checkHealth()]);
+      } catch (err) {
+        // Revert button on failure
+        btn.disabled = false;
+        btn.textContent = isRunning ? 'Unload' : 'Load';
+        btn.className = isRunning
+          ? 'shrink-0 rounded-md border border-red-500/25 bg-red-500/10 px-2.5 py-1 text-[11px] font-medium text-red-400 transition hover:bg-red-500/20'
+          : 'shrink-0 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-400 transition hover:bg-emerald-500/20';
+        showError(err.message);
+      }
+    }
+
+    checkHealth();
+    loadModels();
+    setInterval(checkHealth, 15000);
+  </script>
+</body>
+</html>
